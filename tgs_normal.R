@@ -41,9 +41,8 @@ GS <- function(start_x, d, T, burn_in, single_cond, extra_pars, type="determinis
       output_x[iter - burn_in,] <- x
     }
   }
-  return(output_x)
+  return(list(x=output_x))
 }
-
 
 cond_moments_normal <- function(x, mu_full, sigma_full, dim){
   block_sigma_dim_dim <- sigma_full[dim, dim]
@@ -88,9 +87,77 @@ cond_distr_full_normal <- function(x, mu_full, sigma_full, tempering, version="m
   return(p_ix)
 }
 
-rho = 0.999
+plot_results <- function(results, extra_pars, title, limits = c(-3, 3)){
+  require(ggplot2)
+  require(MASS)
+  x <- results$x
+  which_in_range <- which(x[,1] >= limits[1] & x[,2] <= limits[2])
+  x <- x[which_in_range,]
+  weights = NULL
+  if(!is.null(results$weights)){
+    weights = results$weights[which_in_range]
+  }
+  
+  x_distr = mvrnorm(10000, mu=extra_pars$mu, Sigma = extra_pars$sigma)
+  p <- ggplot(as.data.frame(x_distr), aes(x=x_distr[,1], y=x_distr[,2])) +
+    xlim(limits) + 
+    ylim(limits) +
+    stat_density_2d(geom="polygon", aes(fill=stat(level))) +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+    labs(x="", y="",  title=title) +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5, face="bold", size=(15)),legend.position = "none") +
+    geom_point(data=as.data.frame(x), aes(x=x[,1], y=x[,2], size=weights))
+  if(!is.null(results$ESS)){
+    p = p + annotate("label",x=limits[1] + 1, y=limits[2] - 0.5, vjust =1, hjust=1 , label = paste("ESS:" ,round(results$ESS,2), sep = " "))
+  }
+  p
+}
+
+plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, limits=c(-3,3)){
+  require(MASS)
+  require(ggplot2)
+  x = mvrnorm(10000, mu=extra_pars$mu, Sigma=extra_pars$sigma)
+  d = length(extra_pars$mu)
+  
+  p_0 = ggplot(as.data.frame(x), aes(x=x[,1], y=x[,2])) +
+    ylim(limits) + 
+    xlim(limits) + 
+    stat_density_2d(geom="polygon", aes(fill=stat(level))) +
+    scale_fill_distiller(palette = "YlOrRd", direction=1) + 
+    theme_classic() +
+    annotate("label", x=limits[1] + 1, y=limits[2] - 0.5, vjust=1, hjust=1, label="f(x)") +
+    theme(legend.position = "none") +
+    labs(x="", y="")
+  
+  TGS_vers = TGS(start_x=c(0,0), d=d, T=10000, burn_in=0, tempering=tempering, cond_distr=cond_distr, 
+                 single_cond = single_cond, extra_pars=extra_pars, version=version)
+  x_1 = TGS_vers$x
+  p_1 = ggplot(as.data.frame(x_1), aes(x=x_1[,1], y=x_1[,2])) +
+    ylim(limits) + 
+    xlim(limits) + 
+    stat_density_2d(geom="polygon", aes(fill=stat(level))) +
+    scale_fill_distiller(palette = "YlOrRd", direction=1) + 
+    theme_classic() +
+    annotate("label", x=limits[1] + 1, y=limits[2] - 0.5, vjust=1, hjust=1, label="f(x)Z(x)") +
+    theme(legend.position = "none") +
+    labs(x="", y="")
+  
+  return(list(f_x = p_0, fz = p_1))
+}
+
+#TESTS
+
+rho = 0.9
 extra_pars = list(mu=c(0,0), sigma=matrix(c(1,rho,rho,1), nrow = 2))
 start_x = c(3,3);d=2; T=200;burn_in=0; tempering=1-rho^2
+
+ps = plot_distr(extra_pars=extra_pars, cond_distr = cond_distr_full_normal, 
+                single_cond = sample_g_cond_normal, tempering=tempering, version="vanilla")
+ps[1]
+ps[2]
+
+
 TGS_res_mixed <- TGS(start_x, d, T, burn_in, tempering, cond_distr = cond_distr_full_normal,
                single_cond = sample_g_cond_normal, extra_pars = extra_pars, version="mixed")
 
@@ -101,9 +168,5 @@ GS_res_rs <- GS(start_x, d, T, burn_in, sample_g_cond_normal, extra_pars, type =
 
 TGS_res_mixed$ESS
 TGS_res_vanilla$ESS
-# beta=0.6
-# x_norm_tempered_v2 = rnorm(10000, 0, 1/sqrt(beta)) * (1/sqrt(beta)) * (sqrt(2*pi))*(1/(sqrt(2*pi)))^beta
-# x_norm = rnorm(1000, 0, 1)
-# x_norm_tempered = sign(x_norm) * abs(x_norm)^beta
-# hist(x_norm_tempered)
-# hist(x_norm_tempered_v2)
+
+plot_results(TGS_res_vanilla, extra_pars, "TGS_vanilla")
