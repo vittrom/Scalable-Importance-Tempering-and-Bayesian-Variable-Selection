@@ -1,18 +1,32 @@
-#TGS implementation
+#TGS implementation + additional functions
 
-TGS <- function(start_x, d, T, burn_in, tempering, cond_distr, single_cond, extra_pars, version="mixed"){
+TGS <- function(start_x, d, T, burn_in, tempering, cond_distr, single_cond, extra_pars, version="mixed", shape=0.2){
   mu <- extra_pars$mu
   sigma <-  extra_pars$sigma
   output_x <- matrix(NA, nrow <- T, ncol <- d)
   sample_weights <- rep(NA, T)
   x <- start_x
-  p_x = cond_distr(x, mu, sigma, tempering, version)
+  
+  if(version=="t"){
+    p_x = cond_distr(x, mu, sigma, shape)
+  }else{
+    p_x = cond_distr(x, mu, sigma, tempering, version)
+  }
+  
   for(iter in 1:(burn_in + T)){
     i <- sample.int(d, 1, prob = p_x)
     #sample from g(x_i|x_{-i})
-    x[i] = single_cond(1, x, i, mu, sigma, tempering, version)
+    if(version=="t"){
+      x[i] = single_cond(1, x, i, mu, sigma, shape)
+    }else{
+      x[i] = single_cond(1, x, i, mu, sigma, tempering, version)
+    }
     #compute weights
-    p_x <- cond_distr(x, mu, sigma, tempering, version)
+    if(version=="t"){
+      p_x = cond_distr(x, mu, sigma, shape)
+    }else{
+      p_x = cond_distr(x, mu, sigma, tempering, version)
+    }
     if(iter > burn_in){
       output_x[iter - burn_in,] <- x
       sample_weights[iter - burn_in] <- 1/mean(p_x)
@@ -22,7 +36,7 @@ TGS <- function(start_x, d, T, burn_in, tempering, cond_distr, single_cond, extr
   return(list(x=output_x, weights=sample_weights, var_w=var(sample_weights), ESS=ESS))
 }
 
-GS <- function(start_x, d, T, burn_in, single_cond, extra_pars, type="deterministic"){
+GS <- function(start_x, d, T, burn_in, cond_moments, extra_pars, type="deterministic"){
   mu <- extra_pars$mu
   sigma <- extra_pars$sigma
   output_x <- matrix(NA, nrow = T, ncol = d)
@@ -30,12 +44,14 @@ GS <- function(start_x, d, T, burn_in, single_cond, extra_pars, type="determinis
   for(iter in 1:(burn_in + T)){
     if(type=="deterministic"){
       for(i in 1:d){
-        x[i] = single_cond(1, x, i, mu, sigma, 1)
+        moments = cond_moments(x, mu, sigma, i)
+        x[i] = rnorm(1, moments$mu, sqrt(moments$sigma_sq_cond))
       }
     }
     if(type=="random"){
       i <- sample.int(d, 1)
-      x[i] <- single_cond(1, x, i, mu, sigma, 1)
+      moments = cond_moments(x, mu, sigma, i)
+      x[i] = rnorm(1, moments$mu, sqrt(moments$sigma_sq_cond))
     }
     if(iter > burn_in){
       output_x[iter - burn_in,] <- x
@@ -63,9 +79,31 @@ sample_g_cond_normal <- function(n, x, dim, mu, sigma, tempering, version="mixed
   if(version == "vanilla"){return(x_samp_tempered)}
   if(version == "mixed"){
     if(runif(1) < 0.5){return(x_samp)} else{return(x_samp_tempered)}
-    # x_samp <- 0.5 * x_samp + 0.5 * x_samp_tempered
-    # return(x_samp)
   } else {return(NA)}
+}
+
+sample_g_cond_t <- function(n, x, dim, mu, sigma, shape=0.2){
+  moments = cond_moments_normal(x, mu, sigma, dim)
+  mu_t = moments$mu_cond
+  s_t = sqrt(moments$sigma_sq_cond)
+  samp = rt(n, shape) * s_t + mu_t
+  return(samp)
+}
+
+cond_distr_full_t <- function(x, mu_full, sigma_full, shape=0.2){
+  dims = length(mu_full)
+  p_ix = rep(NA, dims)
+  for(i in 1:dims){
+    moments = cond_moments_normal(x, mu_full, sigma_full, i)
+    mu_t = moments$mu_cond
+    s_t = sqrt(moments$sigma_sq_cond)
+    pix = 1/s_t * dt((x[i] - mu_t)/s_t, shape) / dnorm(x[i], mu_t, s_t)
+    if(is.infinite(pix)){
+      pix = 999999
+    } 
+    p_ix[i] = pix
+  }
+  return(p_ix)
 }
 
 cond_distr_full_normal <- function(x, mu_full, sigma_full, tempering, version="mixed"){
@@ -146,27 +184,3 @@ plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, 
   return(list(f_x = p_0, fz = p_1))
 }
 
-#TESTS
-
-rho = 0.9
-extra_pars = list(mu=c(0,0), sigma=matrix(c(1,rho,rho,1), nrow = 2))
-start_x = c(3,3);d=2; T=200;burn_in=0; tempering=1-rho^2
-
-ps = plot_distr(extra_pars=extra_pars, cond_distr = cond_distr_full_normal, 
-                single_cond = sample_g_cond_normal, tempering=tempering, version="vanilla")
-ps[1]
-ps[2]
-
-
-TGS_res_mixed <- TGS(start_x, d, T, burn_in, tempering, cond_distr = cond_distr_full_normal,
-               single_cond = sample_g_cond_normal, extra_pars = extra_pars, version="mixed")
-
-TGS_res_vanilla <- TGS(start_x, d, T, burn_in, tempering, cond_distr = cond_distr_full_normal, 
-                     single_cond = sample_g_cond_normal, extra_pars = extra_pars, version="vanilla")
-GS_res_det <- GS(start_x, d, T, burn_in, sample_g_cond_normal, extra_pars, type = "deterministic")
-GS_res_rs <- GS(start_x, d, T, burn_in, sample_g_cond_normal, extra_pars, type = "random")
-
-TGS_res_mixed$ESS
-TGS_res_vanilla$ESS
-
-plot_results(TGS_res_vanilla, extra_pars, "TGS_vanilla")
