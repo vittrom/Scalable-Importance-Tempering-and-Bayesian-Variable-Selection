@@ -93,4 +93,4 @@ res = foreach(comb=combs) %dopar% {
   list(dataset=comb$dataset, c_vers=comb$c_vers, pip_GS=pip_GS, pip_wTGS=pip_wTGS, pip_HBS=pip_HBS)
 }
 
-save(res, file = "\\Results\\results_real_data.RData")
+save(res, file = ".\\Results\\results_real_data.RData")
