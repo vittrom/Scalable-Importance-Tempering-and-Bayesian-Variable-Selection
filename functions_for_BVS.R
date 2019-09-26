@@ -65,7 +65,6 @@ GS_RB<-function(p,gamma_start=NULL,
   for (t in 1:(T+burn_in)){
     for (j in 1:p){
       fc_j<-single_full_cond(j=j,gamma=gamma,hyper_par=hyper_par)$fc_j
-      # ap<-1-fc_j## not metropolized
       ap<-(1-fc_j)/fc_j## metropolized
       ## update inclusion estimators
       if(t>burn_in){
@@ -388,7 +387,7 @@ compute_flip_rates<-function(output_fc,gamma){
 
 #### FUNCTION TO SIMULATE DATA ##########
 ###
-simulate_data<-function(n,p,c,SNR=2,scenario=1,collinearity=100){
+simulate_data<-function(n,p,c,prior_p_incl,SNR=2,scenario=1){
   require(MASS)
   Sigma<-diag(1,p)
   if(scenario==1){# variables 1 and 2 strongly correlated

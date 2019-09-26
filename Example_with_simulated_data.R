@@ -1,4 +1,5 @@
-source("D:\\Studies\\PhD\\Year1\\STAT548 - Qualifying course\\Paper 1 - TGS\\Code\\functions_for_BVS.R")
+setwd("D:\\Studies\\PhD\\Year1\\STAT548 - Qualifying course\\Paper 1 - TGS\\Code")
+source("functions_for_BVS.R")
 
 set.seed(12345)
 
@@ -8,7 +9,7 @@ n<-100 # n.observations
 p<-100 # n.covariates
 c<-10^3 #prior hyperparameter for the covariance matrix
 prior_p_incl<-5/p #prior prob of inclusion
-hyper_par<-simulate_data(n=n,p=p,c=c,SNR=3,scenario=1) # creates list to be passed to samplers
+hyper_par<-simulate_data(n=n,p=p,c=c,SNR=3,scenario=1, prior_p_incl=prior_p_incl) # creates list to be passed to samplers
 
 ###### RUNNING THE SAMPLERS #######
 ####

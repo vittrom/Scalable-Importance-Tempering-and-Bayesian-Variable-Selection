@@ -1,4 +1,6 @@
-source("D:\\Studies\\PhD\\Year1\\STAT548 - Qualifying course\\Paper 1 - TGS\\Code\\tgs_normal.R")
+setwd("D:\\Studies\\PhD\\Year1\\STAT548 - Qualifying course\\Paper 1 - TGS\\Code")
+
+source("tgs_normal.R")
 library(matrixcalc)
 #Correlation study for more than 2 dimensions
 create_moments <- function(scenario, rho, d){
