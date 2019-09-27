@@ -20,7 +20,7 @@ reps<-50
 
 #Implement in parallel
 cores = detectCores()
-cl = makeCluster(cores - 1)
+cl = makeCluster(cores - 3)
 registerDoParallel(cl)
 
 #Make combination of inputs
@@ -95,7 +95,8 @@ res = foreach(comb = combs) %dopar% {
     eff_wTGS_2 = pip_var_GS/pip_var_wTGS
   }
   ## Output
-  list(scenario=scenario, SNR=SNR, p=p, n=n, eff_TGS_1=eff_TGS_1, eff_wTGS_1=eff_wTGS_1, eff_TGS_2=eff_TGS_2, eff_wTGS_2=eff_wTGS_2)
+  res_par = list(scenario=scenario, SNR=SNR, p=p, n=n, eff_TGS_1=eff_TGS_1, eff_wTGS_1=eff_wTGS_1, eff_TGS_2=eff_TGS_2, eff_wTGS_2=eff_wTGS_2)
+  save(res_par, file=paste(paste(".\\Results\\Simulation_Study\\res", scenario, SNR, p, n, sep = "_"), ".RData", sep=""))
 }
 
 #Extract results
