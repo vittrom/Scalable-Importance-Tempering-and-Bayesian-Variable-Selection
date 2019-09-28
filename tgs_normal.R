@@ -6,7 +6,7 @@ TGS <- function(start_x, d, T, burn_in, tempering, cond_distr, single_cond, extr
   output_x <- matrix(NA, nrow <- T, ncol <- d)
   sample_weights <- rep(NA, T)
   x <- start_x
-  
+  ESS_running = rep(NA, T)
   if(version=="t"){
     p_x = cond_distr(x, mu, sigma, shape)
   }else{
@@ -31,9 +31,10 @@ TGS <- function(start_x, d, T, burn_in, tempering, cond_distr, single_cond, extr
       output_x[iter - burn_in,] <- x
       sample_weights[iter - burn_in] <- 1/mean(p_x)
     }
+    ESS_running[iter] = sum(sample_weights, na.rm = TRUE)^2/sum(sample_weights^2, na.rm = TRUE)
   }
   ESS <- sum(sample_weights)^2/sum(sample_weights^2)
-  return(list(x=output_x, weights=sample_weights, var_w=var(sample_weights), ESS=ESS))
+  return(list(x=output_x, weights=sample_weights, var_w=var(sample_weights), ESS=ESS, ESS_running=ESS_running))
 }
 
 GS <- function(start_x, d, T, burn_in, cond_moments, extra_pars, type="deterministic"){
@@ -152,7 +153,7 @@ plot_results <- function(results, extra_pars, title, limits = c(-3, 3)){
   p
 }
 
-plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, limits=c(-3,3)){
+plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, algo="TGS", limits=c(-3,3)){
   require(MASS)
   require(ggplot2)
   x = mvrnorm(10000, mu=extra_pars$mu, Sigma=extra_pars$sigma)
@@ -168,8 +169,15 @@ plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, 
     theme(legend.position = "none") +
     labs(x="", y="")
   
-  TGS_vers = TGS(start_x=c(0,0), d=d, T=10000, burn_in=0, tempering=tempering, cond_distr=cond_distr, 
-                 single_cond = single_cond, extra_pars=extra_pars, version=version)
+  
+  if(algo == "ada"){
+    TGS_vers = TGS_adaptive(start_x=c(0,0), d=d, T=10000, burn_in=0, tempering_start=tempering, cond_distr=cond_distr, 
+                   single_cond = single_cond, extra_pars=extra_pars, version=version)
+  } else{
+    TGS_vers = TGS(start_x=c(0,0), d=d, T=10000, burn_in=0, tempering=tempering, cond_distr=cond_distr, 
+                   single_cond = single_cond, extra_pars=extra_pars, version=version)
+  }
+  
   x_1 = TGS_vers$x
   p_1 = ggplot(as.data.frame(x_1), aes(x=x_1[,1], y=x_1[,2])) +
     ylim(limits) + 
@@ -182,5 +190,82 @@ plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, 
     labs(x="", y="")
   
   return(list(f_x = p_0, fz = p_1))
+}
+
+TGS_adaptive <- function(start_x, d, T, burn_in, cond_distr, single_cond, extra_pars, 
+                         tempering_start, update =50, version="mixed", shape=0.2, eps=0.05){
+  mu <- extra_pars$mu
+  sigma <-  extra_pars$sigma
+  output_x <- matrix(NA, nrow <- T, ncol <- d)
+  sample_weights <- rep(NA, T)
+  x <- start_x
+  lags = ceiling(10*log10(update))
+  tempering = tempering_start
+  
+  tempering_seq = rep(NA, ceiling(T/update))
+  tempering_seq[1] = tempering
+  direction_update = rep(NA, ceiling(T/update))
+  
+  if(version=="t"){
+    p_x = cond_distr(x, mu, sigma, shape)
+  }else{
+    p_x = cond_distr(x, mu, sigma, tempering, version)
+  }
+  tmp = lags
+  for(iter in 1:(burn_in + T)){
+    i <- sample.int(d, 1, prob = p_x)
+    #sample from g(x_i|x_{-i})
+    if(version=="t"){
+      x[i] = single_cond(1, x, i, mu, sigma, shape)
+    }else{
+      x[i] = single_cond(1, x, i, mu, sigma, tempering, version)
+    }
+    
+    #compute weights
+    if(version=="t"){
+      p_x = cond_distr(x, mu, sigma, shape)
+    }else{
+      p_x = cond_distr(x, mu, sigma, tempering, version)
+    }
+    
+    if(iter > burn_in){
+      output_x[iter - burn_in,] <- x
+      sample_weights[iter - burn_in] <- 1/mean(p_x)
+      tempering = tempering_start * (1 - (iter - burn_in)/(T+1))
+    }
+    
+    if(iter - burn_in == update){
+      samps = output_x[(iter- burn_in - update + 1): (iter-burn_in), i] * sample_weights[(iter - burn_in -update + 1): (iter - burn_in)]
+      corr = acf(samps, plot=FALSE)
+      #novar implementation
+      tmp = sum(corr$acf)/var(samps)
+      tempering_seq[round((iter-burn_in)/update, 0) + 1] = tempering
+      direction_update[round((iter-burn_in)/update, 0) + 1] = 0
+
+    }
+    if((iter-burn_in) %% update == 0 & iter > (burn_in + update)){
+        samps = output_x[(iter- burn_in - update + 1): (iter-burn_in), i] * sample_weights[(iter - burn_in -update + 1): (iter - burn_in)]
+        corr = acf(samps, plot=FALSE)
+
+        #novar implementation
+        corr_sum = sum(corr$acf)/var(samps)
+        ratio = corr_sum/tmp
+
+        if(ratio > 1){
+          tempering = runif(1, 1e-5, tempering)
+          direction_update[round((iter-burn_in)/update, 0) + 1] = -1
+        } else {
+          tempering = tempering#min(max(runif(1,tempering*(1 - eps), tempering * (1 + eps)), 1e-6),1)
+          direction_update[round((iter-burn_in)/update, 0) + 1] = 1
+          # min(max(runif(1,tempering - tempering*0.05, tempering + tempering*0.05), 1e-6), 1)
+        }
+
+        tempering_seq[round((iter-burn_in)/update, 0) + 1] = tempering
+        tmp = corr_sum
+      }
+  }
+  ESS <- sum(sample_weights)^2/sum(sample_weights^2)
+  return(list(x=output_x, weights=sample_weights, var_w=var(sample_weights), ESS=ESS, tempering_seq=tempering_seq, 
+              update=update, direction_update=direction_update))
 }
 
