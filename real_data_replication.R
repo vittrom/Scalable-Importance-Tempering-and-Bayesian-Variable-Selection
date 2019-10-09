@@ -1,3 +1,4 @@
+rm(list=ls())
 setwd("D:\\Studies\\PhD\\Year1\\STAT548 - Qualifying course\\Paper 1 - TGS\\Code")
 
 source("functions_for_BVS.R")
@@ -31,13 +32,13 @@ precompute_mult <- function(dataset, c_version="n", path = ".\\Data\\"){
 
 reps<-20
 datasets <- c("dld.txt")#, "tgfb", "tgbf172")
-T <- c(500, 1000, 30000)
+T <- c(500)#, 1000, 30000)
 burn_in = 0.1
 c_version = c("n", "p2")
 thin=2
 full_cond=full_cond
-n_HBS=10000
-n_GS=10000
+n_HBS=1000
+n_GS=1000
 
 #Precompute Xtx etc
 
@@ -58,7 +59,7 @@ for(i in 1:length(datasets)){
 
 #Settings for parallel run
 cores = detectCores()
-cl = makeCluster(cores - 1)
+cl = makeCluster(2)
 registerDoParallel(cl)
 
 #Get results parallel run
@@ -90,7 +91,9 @@ res = foreach(comb=combs) %dopar% {
     pip_HBS[z,] <- output_HBS$est_inclusion_probs
   }
   
-  list(dataset=comb$dataset, c_vers=comb$c_vers, pip_GS=pip_GS, pip_wTGS=pip_wTGS, pip_HBS=pip_HBS)
+  res_par = list(dataset=comb$dataset, c_vers=comb$c_vers, pip_GS=pip_GS, pip_wTGS=pip_wTGS, pip_HBS=pip_HBS)
+  save(res_par, file=paste(paste(".\\Results\\Simulation_Study\\dld\\res", comb$c_vers, sep = "_"), ".RData", sep=""))
+  
 }
 
-save(res, file = ".\\Results\\results_real_data.RData")
+#save(res, file = ".\\Results\\results_real_data.RData")

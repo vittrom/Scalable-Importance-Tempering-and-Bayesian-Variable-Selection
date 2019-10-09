@@ -1,3 +1,4 @@
+rm(list=ls())
 setwd("D:\\Studies\\PhD\\Year1\\STAT548 - Qualifying course\\Paper 1 - TGS\\Code")
 source("functions_for_BVS.R")
 
@@ -25,5 +26,6 @@ output_wTGS_true<-wTGS(p=p,hyper_par=hyper_par,T=reps*T,burn_in=burn_in, vars_se
 ##### PLOTTING THE OUTPUT ##########
 ####
 
-plot_results_bvs(output_GS, output_TGS, output_wTGS, output_wTGS_true$est_inclusion_probs)
+plot_results_bvs(output_GS, output_TGS, output_wTGS, output_wTGS_true$est_inclusion_probs, 
+                 variables = c(1,2,17), save = TRUE, height = 4.5)
 

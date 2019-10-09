@@ -126,7 +126,7 @@ cond_distr_full_normal <- function(x, mu_full, sigma_full, tempering, version="m
   return(p_ix)
 }
 
-plot_results <- function(results, extra_pars, title, limits = c(-3, 3)){
+plot_results <- function(results, extra_pars, title, limits = c(-3, 3), width=8, height=6.5, save=FALSE){
   require(ggplot2)
   require(MASS)
   x <- results$x
@@ -148,7 +148,11 @@ plot_results <- function(results, extra_pars, title, limits = c(-3, 3)){
     theme(plot.title = element_text(hjust = 0.5, face="bold", size=(15)),legend.position = "none") +
     geom_point(data=as.data.frame(x), aes(x=x[,1], y=x[,2], size=weights))
   if(!is.null(results$ESS)){
-    p = p + annotate("label",x=limits[1] + 1, y=limits[2] - 0.5, vjust =1, hjust=1 , label = paste("ESS:" ,round(results$ESS,2), sep = " "))
+    p = p + annotate("label",x=limits[1] + 2.5, y=limits[2] - 0.5, vjust =1, hjust=1 , label = paste("ESS:" ,round(results$ESS,2), sep = " "))
+  }
+  p
+  if(save){
+    ggsave(paste(title,".pdf", sep=""), width = width, height = width, units = "cm",path = "./Plots")
   }
   p
 }
@@ -165,7 +169,7 @@ plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, 
     stat_density_2d(geom="polygon", aes(fill=stat(level))) +
     scale_fill_distiller(palette = "YlOrRd", direction=1) + 
     theme_classic() +
-    annotate("label", x=limits[1] + 1, y=limits[2] - 0.5, vjust=1, hjust=1, label="f(x)") +
+    annotate("label", x=limits[1] + 1, y=limits[2] - 0.5, vjust=1, hjust=1, label=expression(pi~"(x)")) +
     theme(legend.position = "none") +
     labs(x="", y="")
   
@@ -185,15 +189,30 @@ plot_distr <- function(extra_pars, cond_distr, single_cond, tempering, version, 
     stat_density_2d(geom="polygon", aes(fill=stat(level))) +
     scale_fill_distiller(palette = "YlOrRd", direction=1) + 
     theme_classic() +
-    annotate("label", x=limits[1] + 1, y=limits[2] - 0.5, vjust=1, hjust=1, label="f(x)Z(x)") +
+    annotate("label", x=limits[1] +2, y=limits[2] - 0.5, vjust=1, hjust=1, label=expression(pi~"(x)Z(x)")) +
     theme(legend.position = "none") +
     labs(x="", y="")
   
   return(list(f_x = p_0, fz = p_1))
 }
 
+plot_weights <- function(results,  title, width=10, height=6.5, save=FALSE){
+  weights = as.data.frame(results$weights)
+  n = nrow(weights)
+  weights = as.data.frame(cbind( 1:n, weights))
+  p = ggplot(weights, aes(x=weights[,1], y = weights[,2])) + 
+    geom_point(alpha=0.1) +
+    labs(x="Iteration", y="Weight", title = title) +
+    theme(plot.title = element_text(hjust = 0.5))
+  p
+  if(save){
+    ggsave(paste(title, ".pdf", sep=""), width = width, height = height, units = "cm", path = "./Plots/")
+  }
+  p
+}
+
 TGS_adaptive <- function(start_x, d, T, burn_in, cond_distr, single_cond, extra_pars, 
-                         tempering_start, update =50, version="mixed", shape=0.2, eps=0.05){
+                         tempering_start, update =50, version="mixed", shape=0.2, eps=0.05, annealing=FALSE, tempering_adj = TRUE){
   mu <- extra_pars$mu
   sigma <-  extra_pars$sigma
   output_x <- matrix(NA, nrow <- T, ncol <- d)
@@ -201,16 +220,16 @@ TGS_adaptive <- function(start_x, d, T, burn_in, cond_distr, single_cond, extra_
   x <- start_x
   lags = ceiling(10*log10(update))
   tempering = tempering_start
-  
+
   tempering_seq = rep(NA, ceiling(T/update))
   tempering_seq[1] = tempering
-  direction_update = rep(NA, ceiling(T/update))
   
   if(version=="t"){
     p_x = cond_distr(x, mu, sigma, shape)
   }else{
     p_x = cond_distr(x, mu, sigma, tempering, version)
   }
+  
   tmp = lags
   for(iter in 1:(burn_in + T)){
     i <- sample.int(d, 1, prob = p_x)
@@ -227,45 +246,46 @@ TGS_adaptive <- function(start_x, d, T, burn_in, cond_distr, single_cond, extra_
     }else{
       p_x = cond_distr(x, mu, sigma, tempering, version)
     }
-    
+  
     if(iter > burn_in){
       output_x[iter - burn_in,] <- x
       sample_weights[iter - burn_in] <- 1/mean(p_x)
-      tempering = tempering_start * (1 - (iter - burn_in)/(T+1))
+      if(annealing){
+        tempering = tempering_start * (1 - (iter - burn_in)/(T+1))
+      }
     }
     
-    if(iter - burn_in == update){
-      samps = output_x[(iter- burn_in - update + 1): (iter-burn_in), i] * sample_weights[(iter - burn_in -update + 1): (iter - burn_in)]
-      corr = acf(samps, plot=FALSE)
-      #novar implementation
-      tmp = sum(corr$acf)/var(samps)
-      tempering_seq[round((iter-burn_in)/update, 0) + 1] = tempering
-      direction_update[round((iter-burn_in)/update, 0) + 1] = 0
-
-    }
-    if((iter-burn_in) %% update == 0 & iter > (burn_in + update)){
+    if(tempering_adj){
+      if(iter - burn_in == update){
         samps = output_x[(iter- burn_in - update + 1): (iter-burn_in), i] * sample_weights[(iter - burn_in -update + 1): (iter - burn_in)]
         corr = acf(samps, plot=FALSE)
 
-        #novar implementation
-        corr_sum = sum(corr$acf)/var(samps)
-        ratio = corr_sum/tmp
-
-        if(ratio > 1){
-          tempering = runif(1, 1e-5, tempering)
-          direction_update[round((iter-burn_in)/update, 0) + 1] = -1
-        } else {
-          tempering = tempering#min(max(runif(1,tempering*(1 - eps), tempering * (1 + eps)), 1e-6),1)
-          direction_update[round((iter-burn_in)/update, 0) + 1] = 1
-          # min(max(runif(1,tempering - tempering*0.05, tempering + tempering*0.05), 1e-6), 1)
-        }
-
+        tmp = sum(corr$acf)/var(samps)
         tempering_seq[round((iter-burn_in)/update, 0) + 1] = tempering
-        tmp = corr_sum
+
+    }
+      if((iter-burn_in) %% update == 0 & iter > (burn_in + update)){
+          # max_weight = max(sample_weights, na.rm = TRUE)
+          samps = output_x[(iter- burn_in - update + 1): (iter-burn_in), i] * sample_weights[(iter - burn_in - update + 1): (iter - burn_in)]
+          corr = acf(samps, plot=FALSE)
+
+          #novar implementation
+          corr_sum = sum(corr$acf)/var(samps)
+          ratio = corr_sum/tmp
+
+          if(ratio > 1){
+            tempering = runif(1, 1e-6, tempering)
+          } else {
+            tempering = min(max(runif(1,tempering*(1 - eps), tempering * (1 + eps)), 1e-6),1)
+          }
+          tempering_start = tempering
+          tempering_seq[round((iter-burn_in)/update, 0) + 1] = tempering
+          tmp = corr_sum
       }
+    }
   }
   ESS <- sum(sample_weights)^2/sum(sample_weights^2)
   return(list(x=output_x, weights=sample_weights, var_w=var(sample_weights), ESS=ESS, tempering_seq=tempering_seq, 
-              update=update, direction_update=direction_update))
+              update=update))
 }
 

@@ -425,7 +425,8 @@ simulate_data<-function(n,p,c,prior_p_incl,SNR=2,scenario=1){
   return(hyper_par)
 }
 
-plot_results_bvs <- function(output_GS, output_TGS, output_wTGS, true_post, variables=c(1,2), cols=c("black", "blue", "red")){
+plot_results_bvs <- function(output_GS, output_TGS, output_wTGS, true_post, variables=c(1,2), 
+                             cols=c("black", "blue", "red"), save=FALSE, width=8.5, height=6, filename="results"){
   n_variables = length(variables)
   n_rows = ceiling(n_variables/3)
   n_cols = ifelse(n_rows > 1, 3, n_variables)
@@ -435,27 +436,34 @@ plot_results_bvs <- function(output_GS, output_TGS, output_wTGS, true_post, vari
   
   max_inc_prob = rep(0, n_variables)
   min_inc_prob = rep(0, n_variables)
-  for(i in variables){
+  for(i in 1:length(variables)){
     ests = c(output_TGS$est_inclusion_probs_mat[,variables[i]]/cumsum(output_TGS$sample_weights), 
              output_wTGS$est_inclusion_probs_mat[,variables[i]]/cumsum(output_wTGS$sample_weights),
-             cumsum(output_GS$gammas[, variables[i]])/c(1:nrow(output_GS$gammas))
+             cumsum(output_GS$gammas[, variables[i]])/c(1:nrow(output_GS$gammas)), true_post[variables[i]]
     )
-    min_inc_prob[i] = min(ests)
-    max_inc_prob[i] = max(ests)
+    min_inc_prob[i] = max(min(ests), 0, na.rm = TRUE)
+    max_inc_prob[i] = min(max(ests),1, na.rm = TRUE)
   }
   
-  par(mfrow=c(n_rows, n_cols + 0.5))
-  for(i in variables){
-    plot(output_TGS$est_inclusion_probs_mat[,i]/cumsum(output_TGS$sample_weights), 
-         ylim = c(min_inc_prob[variables[i]], max_inc_prob[variables[i]]),
+  if(save){
+    pdf(paste("./Plots/", filename, ".pdf", sep=""), width = width, height = height)
+  }
+  par(mfrow=c(n_rows, n_cols))
+  for(i in 1:length(variables)){
+    plot(output_TGS$est_inclusion_probs_mat[,variables[i]]/cumsum(output_TGS$sample_weights), 
+         ylim = c(min_inc_prob[i], max_inc_prob[i]),
          type="l", col=col_TGS, xlab = "Sampler iteration", ylab = "Posterior inclusion prob")
     abline(h=true_post[i], col="gray", lwd=2)
-    lines(cumsum(output_GS$gammas[, i])/c(1:nrow(output_GS$gammas)),col=col_GS)
-    lines(output_wTGS$est_inclusion_probs_mat[,i]/cumsum(output_wTGS$sample_weights), col=col_wTGS)
-    title(paste("Variable ", i))
+    lines(cumsum(output_GS$gammas[, variables[i]])/c(1:nrow(output_GS$gammas)),col=col_GS)
+    lines(output_wTGS$est_inclusion_probs_mat[,variables[i]]/cumsum(output_wTGS$sample_weights), col=col_wTGS)
+    title(paste("Variable ", variables[i]))
+    if(i == length(variables)-1){
+      legend("bottomright", legend=c('GS','TGS','wTGS'),lty=c(1,1,1),col=c(col_GS,col_TGS,col_wTGS))
+    }
   }
-  #Fix legend
-  legend("topleft", legend=c('GS','TGS','wTGS'),lty=c(1,1,1),col=c(col_GS,col_TGS,col_wTGS),  inset=c(1,1), xpd=TRUE, bty="n")
-  #ADD saving option
+  if(save){
+    dev.off()
+  }
+ 
 }
 
